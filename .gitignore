@@ -1,0 +1,19 @@
+# Environment variables & API keys
+.env
+.env.local
+api_key.txt
+
+# Python virtual environments & cache
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Large files & Generated Shorts
+gameplay.mp4
+output_shorts/
+*.mp4
+*.mp3
+*.ass
