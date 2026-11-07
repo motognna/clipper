@@ -1,19 +1,24 @@
-# Environment variables & API keys
+# Chei API
 .env
 .env.local
 api_key.txt
 
-# Python virtual environments & cache
+# Medii virtuale & cache Python
 .venv/
 venv/
 ENV/
 __pycache__/
 *.py[cod]
-*$py.class
 
-# Large files & Generated Shorts
-gameplay.mp4
+# Fișiere mari / generate / locale
+models/
+cache/
+music/*
+!music/README.md
+settings.json
 output_shorts/
+gameplay*.mp4
 *.mp4
 *.mp3
+*.wav
 *.ass

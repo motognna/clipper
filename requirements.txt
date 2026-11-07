@@ -1,0 +1,6 @@
+google-genai
+faster-whisper
+kokoro-onnx
+soundfile
+numpy
+PySide6
