@@ -17,17 +17,20 @@ DEFAULT_VIDEO = os.path.join(BASE_DIR, "gameplay.mp4")
 OUT_W, OUT_H = 1080, 1920
 OUT_FPS = 60
 CRF = 18
-X264_PRESET = "fast"
-RENDER_WORKERS = 2
+X264_PRESET = "veryfast"
+RENDER_WORKERS = 3
 
 # --- Voce (Kokoro, local) ---
 VOICES = ["af_bella", "af_sarah", "af_nicole", "af_heart", "af_nova", "af_sky", "af_jessica"]
 KOKORO_VOICE = "af_bella"      # cea mai expresivă dintre vocile feminine
-HOOK_SPEED = 1.30              # prima propoziție (hook-ul) – agresivă și rapidă
-BODY_SPEED = 1.18
-CTA_SPEED = 1.12
-EXCLAIM_BOOST = 0.07           # propozițiile cu "!" sunt rostite mai repede/energic
-SENTENCE_GAP = 0.10            # pauză scurtă între propoziții (secunde)
+# Viteze apropiate de natural: la >1.15 Kokoro sună robotic/grăbit. Agresivitatea hook-ului vine din textul scris
+# (propoziții scurte, MAJUSCULE, '!') + din pauze și dinamică, nu din accelerare.
+HOOK_SPEED = 1.0
+BODY_SPEED = 1.05
+CTA_SPEED = 1.0
+EXCLAIM_BOOST = 0.0
+SENTENCE_GAP = 0.20            # pauză între propoziții (secunde)
+HOOK_GAP = 0.32                # pauză dramatică după hook
 VOICE_LEAD_IN = 0.25           # secunde de liniște înaintea vocii
 CTA_VARIANTS = [
     "For more crazy content like this, drop a follow!",
@@ -44,7 +47,7 @@ MUSIC_VOLUME = 0.16
 GEMINI_BATCH = 8               # momente cerute per apel (calitate mai bună pe loturi mici)
 MIN_CLIP_SEC = 15
 MAX_CLIP_SEC = 55
-WORDS_PER_SEC = 3.1            # ritm de vorbire țintă (Kokoro la viteza de mai sus)
+WORDS_PER_SEC = 2.8            # ritm de vorbire țintă (Kokoro la vitezele de mai sus, cu pauze)
 
 for _d in (OUTPUT_ROOT, CACHE_DIR, MUSIC_DIR):
     os.makedirs(_d, exist_ok=True)

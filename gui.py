@@ -94,20 +94,22 @@ class Worker(QThread):
     log = Signal(str)
     progress = Signal(int, int)
     done = Signal(bool, str)
+    warn = Signal(str)
 
-    def __init__(self, video, n, req, game, music, voice):
+    def __init__(self, video, n, req, game, music, voice, context="", use_teaser=True):
         super().__init__()
-        self.args = (video, n, req, game, music, voice)
+        self.args = (video, n, req, game, music, voice, context, use_teaser)
         self._stop = False
 
     def stop(self):
         self._stop = True
 
     def run(self):
-        video, n, req, game, music, voice = self.args
+        video, n, req, game, music, voice, context, use_teaser = self.args
         try:
             res = pipeline.run(video, n, req, game, music, voice, log=self.log.emit,
-                               progress=lambda d, t: self.progress.emit(d, t), stop=lambda: self._stop)
+                               progress=lambda d, t: self.progress.emit(d, t), stop=lambda: self._stop,
+                               warn=self.warn.emit, context=context, use_teaser=use_teaser)
             self.done.emit(True, f"Gata! {len(res)} clipuri generate în {config.OUTPUT_DIR}")
         except InterruptedError:
             self.done.emit(False, "Oprit de utilizator.")
@@ -119,7 +121,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Shorts Generator")
-        self.resize(760, 760)
+        self.resize(780, 810)
         self.video = ""
         self.worker = None
 
@@ -141,7 +143,7 @@ class MainWindow(QMainWindow):
         row.addSpacing(16)
         row.addWidget(QLabel("Joc:"))
         self.game = QLineEdit(config.DEFAULT_GAME)
-        self.game.setMaximumWidth(160)
+        self.game.setMaximumWidth(150)
         row.addWidget(self.game)
         row.addSpacing(16)
         row.addWidget(QLabel("Voce:"))
@@ -150,7 +152,11 @@ class MainWindow(QMainWindow):
         self.voice.setCurrentText(config.KOKORO_VOICE)
         row.addWidget(self.voice)
         row.addStretch()
-        self.music = QCheckBox("Muzică de fundal")
+        self.teaser = QCheckBox("Preview moment culminant (secunda 0)")
+        self.teaser.setChecked(True)
+        row.addWidget(self.teaser)
+        row.addSpacing(10)
+        self.music = QCheckBox("Muzică")
         self.music.setChecked(True)
         row.addWidget(self.music)
         root.addLayout(row)
@@ -159,6 +165,11 @@ class MainWindow(QMainWindow):
         self.req = QLineEdit()
         self.req.setPlaceholderText("lasă gol pentru cele mai bune momente în general")
         root.addWidget(self.req)
+
+        root.addWidget(QLabel("Note / Context personal (opțional, ex: păreri, trivia, detalii de integrat în comentariu):"))
+        self.context = QLineEdit()
+        self.context.setPlaceholderText("lasă gol sau adaugă trivia / opinii personale pe care Gemini să le includă")
+        root.addWidget(self.context)
 
         outrow = QHBoxLayout()
         self.out_label = QLabel("")
@@ -186,7 +197,6 @@ class MainWindow(QMainWindow):
         btns.addWidget(self.stop, 1)
         root.addLayout(btns)
 
-
         self.bar = QProgressBar()
         self.bar.setValue(0)
         root.addWidget(self.bar)
@@ -207,6 +217,9 @@ class MainWindow(QMainWindow):
         self.n.setValue(int(s.get("n", 3)))
         self.game.setText(s.get("game", config.DEFAULT_GAME))
         self.music.setChecked(bool(s.get("music", True)))
+        self.teaser.setChecked(bool(s.get("teaser", True)))
+        self.req.setText(s.get("requirements", ""))
+        self.context.setText(s.get("context", ""))
         v = s.get("voice", config.KOKORO_VOICE)
         if v in config.VOICES:
             self.voice.setCurrentText(v)
@@ -223,8 +236,10 @@ class MainWindow(QMainWindow):
     def _save_settings(self):
         with open(config.SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump({"n": self.n.value(), "game": self.game.text(), "music": self.music.isChecked(),
+                       "teaser": self.teaser.isChecked(),
                        "voice": self.voice.currentText(), "output_dir": config.OUTPUT_DIR,
-                       "video": self.video}, f)
+                       "video": self.video, "requirements": self.req.text(),
+                       "context": self.context.text()}, f)
 
     def _refresh_out_label(self):
         rel = os.path.relpath(config.OUTPUT_DIR, config.BASE_DIR)
@@ -272,8 +287,10 @@ class MainWindow(QMainWindow):
         self.stop.setEnabled(True)
         self.worker = Worker(self.video, self.n.value(), self.req.text().strip(),
                              self.game.text().strip() or config.DEFAULT_GAME, self.music.isChecked(),
-                             self.voice.currentText())
+                             self.voice.currentText(), self.context.text().strip(),
+                             self.teaser.isChecked())
         self.worker.log.connect(self.log)
+        self.worker.warn.connect(self.on_warn)
         self.worker.progress.connect(self.on_progress)
         self.worker.done.connect(self.on_done)
         self.worker.start()
@@ -282,6 +299,10 @@ class MainWindow(QMainWindow):
         if self.worker:
             self.log("Se oprește după pasul curent...")
             self.worker.stop()
+
+    def on_warn(self, msg: str):
+        self.log(msg)
+        QMessageBox.warning(self, "Tema cerută lipsește", msg)
 
     def on_progress(self, d, t):
         self.bar.setMaximum(max(1, t))

@@ -10,23 +10,28 @@ import re
 import numpy as np
 import soundfile as sf
 
+import threading
+
 from . import config
 
+_kokoro_lock = threading.Lock()
 _kokoro = None
 
 
 def _get_engine():
     global _kokoro
     if _kokoro is None:
-        from kokoro_onnx import Kokoro
-        model = os.path.join(config.MODELS_DIR, "kokoro-v1.0.onnx")
-        voices = os.path.join(config.MODELS_DIR, "voices-v1.0.bin")
-        if not (os.path.exists(model) and os.path.exists(voices)):
-            raise FileNotFoundError(
-                "Lipsesc fișierele Kokoro din 'models/'. Descarcă kokoro-v1.0.onnx și voices-v1.0.bin "
-                "de la github.com/thewh1teagle/kokoro-onnx/releases (model-files-v1.0)."
-            )
-        _kokoro = Kokoro(model, voices)
+        with _kokoro_lock:
+            if _kokoro is None:
+                from kokoro_onnx import Kokoro
+                model = os.path.join(config.MODELS_DIR, "kokoro-v1.0.onnx")
+                voices = os.path.join(config.MODELS_DIR, "voices-v1.0.bin")
+                if not (os.path.exists(model) and os.path.exists(voices)):
+                    raise FileNotFoundError(
+                        "Lipsesc fișierele Kokoro din 'models/'. Descarcă kokoro-v1.0.onnx și voices-v1.0.bin "
+                        "de la github.com/thewh1teagle/kokoro-onnx/releases (model-files-v1.0)."
+                    )
+                _kokoro = Kokoro(model, voices)
     return _kokoro
 
 
@@ -56,35 +61,51 @@ def _trim(x: np.ndarray, sr: int, tail: float = 0.06) -> np.ndarray:
     return x[max(0, nz[0] - int(0.02 * sr)): nz[-1] + int(tail * sr)]
 
 
-def synthesize(text: str, out_wav: str, voice: str = config.KOKORO_VOICE, add_cta: bool = True) -> tuple:
+def _fade(x: np.ndarray, sr: int, ms: float = 8.0) -> np.ndarray:
+    n = min(len(x) // 4, int(sr * ms / 1000))
+    if n > 1:
+        ramp = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        x = x.copy()
+        x[:n] *= ramp
+        x[-n:] *= ramp[::-1]
+    return x
+
+
+def synthesize(text: str, out_wav: str, voice: str = config.KOKORO_VOICE, add_cta: bool = True,
+               lead_in: float = None) -> tuple:
     """Generează vocea completă. Întoarce (durata în secunde, textul complet rostit)."""
     kokoro = _get_engine()
     sentences = split_sentences(text)
     if add_cta:
         sentences.append(random.choice(config.CTA_VARIANTS))
 
+    lead_sec = config.VOICE_LEAD_IN if lead_in is None else max(0.05, float(lead_in))
     chunks, sr = [], 24000
     for i, s in enumerate(sentences):
         is_cta = add_cta and i == len(sentences) - 1
-        if is_cta:
-            speed = config.CTA_SPEED
-        elif i == 0:
-            speed = config.HOOK_SPEED
-        else:
-            speed = config.BODY_SPEED
-        if s.endswith("!") and not is_cta:
-            speed += config.EXCLAIM_BOOST
+        speed = config.CTA_SPEED if is_cta else (config.HOOK_SPEED if i == 0 else config.BODY_SPEED)
+        speed += 0.0 if is_cta else (config.EXCLAIM_BOOST if s.endswith("!") else 0.0)
         samples, sr = kokoro.create(s, voice=voice, speed=speed, lang="en-us")
         samples = _trim(np.asarray(samples, dtype=np.float32), sr)
-        peak = float(np.max(np.abs(samples))) or 1.0
-        samples = samples / peak * 0.9            # nivel constant pe propoziție
-        if i == 0:
-            samples = np.clip(samples * 1.12, -0.98, 0.98)   # hook-ul puțin mai tare
-        chunks.append(samples)
-        if i < len(sentences) - 1:
-            chunks.append(np.zeros(int(config.SENTENCE_GAP * sr), dtype=np.float32))
+        rms = float(np.sqrt(np.mean(samples ** 2))) or 1.0
 
-    lead = np.zeros(int(config.VOICE_LEAD_IN * sr), dtype=np.float32)
+        # Hook-ul și exclamațiile de deschidere primesc un boost de volum (+3 dB) pentru un impact agresiv și clar
+        is_opening_exclaim = (i == 0 and (len(s.split()) <= 4 or s.endswith("!")))
+        target_rms = 0.18 if is_opening_exclaim else (0.16 if i == 0 else 0.13)
+        gain = target_rms / rms
+        samples = np.tanh(samples * gain * 1.15) / 1.15   # limitare moale, fără clipping dur
+        chunks.append(_fade(samples, sr))
+
+        if i < len(sentences) - 1:
+            # Pauză scurtă și percutantă după exclamația inițială
+            gap = 0.16 if is_opening_exclaim else (config.HOOK_GAP if i == 0 else config.SENTENCE_GAP)
+            chunks.append(np.zeros(int(gap * sr), dtype=np.float32))
+
+    lead = np.zeros(int(lead_sec * sr), dtype=np.float32)
     audio = np.concatenate([lead] + chunks + [np.zeros(int(0.15 * sr), dtype=np.float32)])
+    peak = float(np.max(np.abs(audio))) or 1.0
+    if peak > 0.95:
+        audio = audio / peak * 0.95
     sf.write(out_wav, audio, sr)
     return len(audio) / sr, " ".join(sentences)
+
