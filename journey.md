@@ -415,4 +415,50 @@ Toate testele au fost măsurate pe sistemul local (procesor AMD Ryzen AI 9 365, 
 
 Sistemul generează acum loturi de Short-uri într-o fracțiune din timpul inițial, cu o precizie a cadrelor și o calitate virală net superioare.
 
+---
+
+## 10. Eliminarea Confuziei dintre `.venv` și `venv`
+
+### 10.1. Cerința Utilizatorului
+> *"elimina ( daca e posibil ) , confuzia cu .venv si venv. de la ce este?"*
+
+---
+
+### 10.2. De la ce provenea această confuzie? (Reasoning)
+
+1. **Convenții diferite între IDE-uri și Terminal**:
+   - **VS Code / Cursor / PyCharm**: Editoarele moderne recomandă și caută automat un folder ascuns numit `.venv` (cu punct în față) în rădăcina proiectului.
+   - **Ghidurile clasice Python / Terminal**: Cele mai multe comenzi manuale din documentații folosesc `python -m venv venv` (fără punct).
+
+2. **Ce se afla de fapt pe disc?**:
+   - `venv/` (creat pe 4 noiembrie, 18:25): **Mediul virtual real și complet**, bazat pe **Python 3.12.15**, având o dimensiune de **1.3 GB** și conținând toate dependințele proiectului: PySide6, Kokoro ONNX, Faster-Whisper, Soundfile, ONNX Runtime, Google GenAI etc.
+   - `.venv/` (creat pe 4 noiembrie, 18:46): Un mediu creat ulterior de un editor sau dintr-o încercare de instalare cu o versiune experimentală de sistem (Python 3.14 / 3.15). Avea doar **12 MB**, **nu avea niciun pachet instalat**, iar executabilul său `pip` era corupt (`ModuleNotFoundError: No module named 'pip'`).
+
+3. **Problema creată**:
+   - Dacă utilizatorul sau un editor deschidea proiectul și activa automat `.venv`, orice rulare a aplicației eșua imediat cu `ModuleNotFoundError: No module named 'PySide6'`, deși totul era deja instalat în `venv`.
+
+---
+
+### 10.3. Munca Depusă pe Partea Tehnică (Coding & Rezolvare)
+
+1. **Ștergerea folderului defect**:
+   - Am șters complet folderul parazit și corupt `.venv` (12 MB):
+     ```bash
+     rm -rf .venv
+     ```
+
+2. **Crearea unui Symlink Unificat (`.venv -> venv`)**:
+   - Am creat o legătură simbolică (symlink) de la `.venv` către mediul funcțional `venv`:
+     ```bash
+     ln -s venv .venv
+     ```
+
+3. **Verificare și Rezultat**:
+   - Rularea prin ambele căi a fost testată cu succes:
+     ```bash
+     .venv/bin/python -c "import PySide6, kokoro_onnx, faster_whisper; print('Works perfectly!')"
+     # Output: Works perfectly!
+     ```
+   - **Efectul**: Indiferent dacă utilizatorul, terminalul sau un editor automat rulează `source venv/bin/activate` sau `source .venv/bin/activate`, ambele accesează acum **același mediu unic și complet funcțional** (Python 3.12 cu toate cele 1.3 GB de dependințe). Confuzia a fost complet eliminată fără riscul de a strica compatibilitatea cu vreun editor.
+
 
